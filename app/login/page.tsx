@@ -1,75 +1,47 @@
-"use client";
+import type { Metadata } from "next"
+import { Suspense } from "react"
+import { ShieldCheck } from "lucide-react"
+import LoginForm from "./login-form"
 
-import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { LockKeyhole, Mail } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { createSupabaseBrowserClient } from "@/lib/supabaseClient";
-import { useToast } from "@/components/Toast";
+export const metadata: Metadata = {
+  title: "Staff Login",
+  description: "Login page for The Chronicler publication staff.",
+}
 
 export default function LoginPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const { toast } = useToast();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const error = searchParams.get("error");
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsLoading(true);
-
-    const supabase = createSupabaseBrowserClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (signInError) {
-      setIsLoading(false);
-      toast({ title: "Login failed", description: signInError.message, variant: "error" });
-      return;
-    }
-
-    toast({ title: "Welcome back", description: "Redirecting to the dashboard.", variant: "success" });
-    router.push("/admin");
-    router.refresh();
-  }
-
   return (
-    <main className="chronicler-container grid min-h-[calc(100vh-4rem)] place-items-center py-10">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-chronicler-light text-chronicler-dark">
-            <LockKeyhole className="h-7 w-7" />
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
+      <div
+        aria-hidden="true"
+        className="soft-glow pointer-events-none absolute left-1/2 top-16 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
+      />
+
+      <div
+        aria-hidden="true"
+        className="soft-glow pointer-events-none absolute bottom-10 right-8 h-56 w-56 rounded-full bg-primary/5 blur-3xl"
+      />
+
+      <section className="relative z-10 w-full max-w-md">
+        <div className="mb-6 text-center">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-white/70 px-5 py-2 text-xs font-bold uppercase tracking-[0.22em] text-primary shadow-sm backdrop-blur-md">
+            <ShieldCheck className="h-4 w-4" />
+            Staff Access
           </div>
-          <CardTitle className="text-center text-2xl">Admin Login</CardTitle>
-          <p className="text-center text-sm leading-6 text-slate-600">
-            Sign in with the Supabase Auth account assigned to the admin role.
+
+          <h1 className="text-3xl font-extrabold tracking-tight text-primary sm:text-4xl">
+            Login to The Chronicler
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Access the publication dashboard to manage issues, uploads, and
+            digital flipbook content.
           </p>
-          {error === "admin_required" ? (
-            <p className="rounded-2xl bg-red-50 p-3 text-center text-sm font-medium text-red-700">Admin access is required.</p>
-          ) : null}
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Email</span>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
-                <Input className="pl-10" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" />
-              </div>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Password</span>
-              <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" />
-            </label>
-            <Button className="w-full" type="submit" disabled={isLoading}>
-              {isLoading ? "Signing in…" : "Login to Dashboard"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+        </div>
+
+        <Suspense>
+          <LoginForm />
+        </Suspense>
+      </section>
     </main>
-  );
+  )
 }
