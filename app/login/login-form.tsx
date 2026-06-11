@@ -111,7 +111,7 @@ export default function LoginForm() {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-primary/10 bg-white/85 p-6 shadow-2xl shadow-primary/10 backdrop-blur-xl sm:p-8">
+    <div className="relative w-full overflow-hidden rounded-[1.75rem] border border-primary/10 bg-white/85 p-5 shadow-2xl shadow-primary/10 backdrop-blur-xl sm:rounded-[2rem] sm:p-8">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-primary/10 blur-3xl"
@@ -122,7 +122,7 @@ export default function LoginForm() {
       />
 
       <div className="relative">
-        <div className="mb-6 rounded-3xl border border-primary/10 bg-gradient-to-br from-primary/10 to-transparent p-5">
+        <div className="mb-6 rounded-3xl border border-primary/10 bg-gradient-to-br from-primary/10 to-transparent p-4 sm:p-5">
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
             <ShieldCheck className="h-6 w-6" />
           </div>
