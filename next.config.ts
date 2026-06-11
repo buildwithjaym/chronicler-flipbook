@@ -1,7 +1,7 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  serverExternalPackages: ["canvas", "sharp", "pdfjs-dist"],
+}
 
-export default nextConfig;
+export default nextConfig

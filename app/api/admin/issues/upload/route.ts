@@ -2,8 +2,10 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { slugify } from "@/lib/slugify"
+import { convertIssuePdfToWebp } from "@/lib/pdf/convert-issue-pdf"
 
 export const runtime = "nodejs"
+export const maxDuration = 300
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
@@ -96,7 +98,10 @@ export async function POST(request: Request) {
 
     if (uploadError) {
       return NextResponse.json(
-        { error: uploadError.message },
+        {
+          stage: "storage_upload",
+          error: uploadError.message,
+        },
         { status: 500 }
       )
     }
@@ -113,10 +118,12 @@ export async function POST(request: Request) {
         description: description || null,
         pdf_path: pdfPath,
         status: "processing",
+        total_pages: 0,
+        conversion_error: null,
         created_by: user.id,
       })
       .select(
-        "id, title, slug, status, volume, issue_number, academic_year, created_at"
+        "id, title, slug, status, total_pages, volume, issue_number, academic_year, created_at"
       )
       .single()
 
@@ -124,15 +131,43 @@ export async function POST(request: Request) {
       await adminSupabase.storage.from(privateBucket).remove([pdfPath])
 
       return NextResponse.json(
-        { error: issueError.message },
+        {
+          stage: "issue_insert",
+          error: issueError.message,
+        },
         { status: 500 }
       )
     }
 
-    return NextResponse.json({
-      success: true,
-      issue,
-    })
+    try {
+      const converted = await convertIssuePdfToWebp({
+        adminSupabase,
+        issueId,
+        pdfPath,
+      })
+
+      return NextResponse.json({
+        success: true,
+        issue: converted.issue,
+        totalPages: converted.totalPages,
+        message: `PDF uploaded and converted into ${converted.totalPages} pages.`,
+      })
+    } catch (conversionError) {
+      const message =
+        conversionError instanceof Error
+          ? conversionError.message
+          : "PDF uploaded but conversion failed."
+
+      return NextResponse.json(
+        {
+          success: false,
+          stage: "conversion",
+          issue,
+          error: message,
+        },
+        { status: 500 }
+      )
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unexpected upload error."

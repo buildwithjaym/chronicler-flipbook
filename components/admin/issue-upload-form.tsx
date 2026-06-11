@@ -62,7 +62,7 @@ export default function IssueUploadForm() {
       return
     }
 
-    setSuccessMessage("PDF uploaded. Conversion status is now processing.")
+    setSuccessMessage("PDF uploaded and converted successfully.")
 
     setTitle("")
     setVolume("")
@@ -204,7 +204,7 @@ export default function IssueUploadForm() {
           {isUploading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Uploading PDF...
+              Uploading and converting PDF...
             </>
           ) : (
             "Upload PDF"
