@@ -1,6 +1,7 @@
 import sharp from "sharp"
 import { createAdminClient } from "@/lib/supabase/admin"
 import type { Canvas, CanvasRenderingContext2D } from "canvas"
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.js" // Node-compatible
 
 type AdminSupabase = ReturnType<typeof createAdminClient>
 
@@ -34,8 +35,8 @@ function getPrivateBucket() {
   return process.env.SUPABASE_PRIVATE_BUCKET || "private-uploads"
 }
 
-// Node canvas factory for PDF.js rendering
-async function createCanvasFactoryClass() {
+// Node canvas factory
+export async function createCanvasFactoryClass() {
   const CanvasModule = await import("canvas")
 
   class NodeCanvasFactory {
@@ -59,14 +60,14 @@ async function createCanvasFactoryClass() {
   return { NodeCanvasFactory }
 }
 
-// List objects in Supabase storage
+// List Supabase storage objects
 async function listStorageObjects(adminSupabase: AdminSupabase, bucket: string, folder: string) {
   const { data, error } = await adminSupabase.storage.from(bucket).list(folder, { limit: 1000 })
   if (error || !data) return []
   return data.filter((item) => item.name).map((item) => `${folder}/${item.name}`)
 }
 
-// Clear previously generated pages & thumbnails
+// Clear previous assets
 async function clearExistingGeneratedAssets(adminSupabase: AdminSupabase, issueId: string) {
   const publicBucket = getPublicBucket()
   await adminSupabase.from("pages").delete().eq("issue_id", issueId)
@@ -80,11 +81,9 @@ async function clearExistingGeneratedAssets(adminSupabase: AdminSupabase, issueI
   }
 }
 
-// Main PDF → WebP conversion function
+// Main PDF → WebP converter
 export async function convertIssuePdfToWebp({ adminSupabase, issueId, pdfPath }: ConvertIssuePdfParams) {
-  let loadingTask: any = null
   let pdfDocument: any = null
-
   const publicBucket = getPublicBucket()
   const privateBucket = getPrivateBucket()
 
@@ -92,51 +91,46 @@ export async function convertIssuePdfToWebp({ adminSupabase, issueId, pdfPath }:
     await adminSupabase.from("issues").update({ status: "processing", conversion_error: null, total_pages: 0 }).eq("id", issueId)
     await clearExistingGeneratedAssets(adminSupabase, issueId)
 
-    // Download PDF
+    // Download PDF from Supabase storage
     const { data: pdfBlob, error: downloadError } = await adminSupabase.storage.from(privateBucket).download(pdfPath)
     if (downloadError || !pdfBlob) throw new Error(downloadError?.message || "Unable to download PDF.")
     const pdfData = new Uint8Array(await pdfBlob.arrayBuffer())
 
-    // Load PDF.js and Canvas factory
-    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs")
+    // Create canvas factory instance
     const { NodeCanvasFactory } = await createCanvasFactoryClass()
     const canvasFactory = new NodeCanvasFactory()
 
-    loadingTask = pdfjsLib.getDocument({
+    // Load PDF (Node-compatible)
+    const loadingTask = getDocument({
       data: pdfData,
-      disableFontFace: false,
-      useSystemFonts: true,
-      disableWorker: true,
-      CanvasFactory: NodeCanvasFactory as any,
+      useSystemFonts: true // only instance
     })
-
     pdfDocument = await loadingTask.promise
     const totalPages = pdfDocument.numPages
     const pageRows: PageRow[] = []
 
     for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
       const page = await pdfDocument.getPage(pageNumber)
-      const viewport = page.getViewport({ scale: 2 }) // scale higher for better quality
+      const viewport = page.getViewport({ scale: 3 }) // high-res for clarity
+      const { canvas, context } = canvasFactory.create(Math.ceil(viewport.width), Math.ceil(viewport.height))
 
-      const width = Math.ceil(viewport.width)
-      const height = Math.ceil(viewport.height)
-      const canvasAndContext = canvasFactory.create(width, height)
-
-      await page.render({ canvasContext: canvasAndContext.context, viewport, intent: "display" }).promise
-
-      const pngBuffer = canvasAndContext.canvas.toBuffer("image/png")
+      // Render PDF page to canvas
+      await page.render({ canvasContext: context, viewport, intent: "print" }).promise
+      const pngBuffer = canvas.toBuffer("image/png")
 
       // Full-size WebP
-      const fullWebpBuffer = await sharp(pngBuffer).resize({ width: FULL_PAGE_WIDTH }).webp({ quality: 90 }).toBuffer()
+      const fullWidth = viewport.width > FULL_PAGE_WIDTH ? FULL_PAGE_WIDTH : Math.ceil(viewport.width)
+      const fullWebpBuffer = await sharp(pngBuffer).resize({ width: fullWidth }).webp({ quality: 95 }).toBuffer()
       const metadata = await sharp(fullWebpBuffer).metadata()
 
-      // Thumbnail WebP
+      // Thumbnail
       const thumbBuffer = await sharp(pngBuffer).resize({ width: THUMBNAIL_WIDTH }).webp({ quality: 60 }).toBuffer()
 
       const paddedPage = padPageNumber(pageNumber)
       const imagePath = `${issueId}/pages/page-${paddedPage}.webp`
       const thumbnailPath = `${issueId}/thumbnails/thumb-${paddedPage}.webp`
 
+      // Upload full page
       const { error: pageUploadError } = await adminSupabase.storage.from(publicBucket).upload(imagePath, fullWebpBuffer, {
         contentType: "image/webp",
         cacheControl: "31536000",
@@ -144,6 +138,7 @@ export async function convertIssuePdfToWebp({ adminSupabase, issueId, pdfPath }:
       })
       if (pageUploadError) throw new Error(`Page ${pageNumber} upload failed: ${pageUploadError.message}`)
 
+      // Upload thumbnail
       const { error: thumbUploadError } = await adminSupabase.storage.from(publicBucket).upload(thumbnailPath, thumbBuffer, {
         contentType: "image/webp",
         cacheControl: "31536000",
@@ -156,19 +151,21 @@ export async function convertIssuePdfToWebp({ adminSupabase, issueId, pdfPath }:
         page_number: pageNumber,
         image_path: imagePath,
         thumbnail_path: thumbnailPath,
-        width: metadata.width || width,
-        height: metadata.height || height,
+        width: metadata.width || viewport.width,
+        height: metadata.height || viewport.height,
       })
 
       page.cleanup()
-      canvasFactory.destroy(canvasAndContext)
+      canvasFactory.destroy({ canvas, context })
     }
 
     if (!pageRows.length) throw new Error("No PDF pages were generated.")
 
+    // Insert pages into Supabase
     const { error: insertError } = await adminSupabase.from("pages").insert(pageRows)
     if (insertError) throw new Error(insertError.message)
 
+    // Update issue record
     const { data: updatedIssue, error: issueUpdateError } = await adminSupabase
       .from("issues")
       .update({ status: "draft", total_pages: totalPages, conversion_error: null })
@@ -184,6 +181,5 @@ export async function convertIssuePdfToWebp({ adminSupabase, issueId, pdfPath }:
     throw new Error(message)
   } finally {
     if (pdfDocument) await pdfDocument.destroy?.()
-    if (loadingTask) await loadingTask.destroy?.()
   }
 }
