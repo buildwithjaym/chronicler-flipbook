@@ -82,7 +82,7 @@ export default function HomePage() {
             size="lg"
             className="h-12 rounded-full px-7 shadow-lg shadow-primary/20"
           >
-            <Link href="/issues/latest" className="inline-flex items-center gap-2">
+            <Link href="/newsletters" className="inline-flex items-center gap-2">
               Read Latest Issue
               <ArrowRight className="h-4 w-4" />
             </Link>
